@@ -5,8 +5,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # ============================================================
 # COLLE TES CLÉS ICI
-TELEGRAM_TOKEN = "COLLE_TON_TOKEN_TELEGRAM_ICI"
-ANTHROPIC_API_KEY = "COLLE_TA_CLÉ_ANTHROPIC_ICI"
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 # ============================================================
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
