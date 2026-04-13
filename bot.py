@@ -23,6 +23,9 @@ user_limits = {}
 user_history = {}
 user_bilan = {}
  
+# ============================================================
+# PERSISTANCE
+# ============================================================
 def save_data():
     try:
         data = {}
@@ -51,6 +54,9 @@ def load_data():
     except:
         pass
  
+# ============================================================
+# SESSIONS & LIMITES
+# ============================================================
 def get_session(user_id):
     if user_id not in user_sessions:
         user_sessions[user_id] = {"format": None, "focus": False, "hand": {}, "step": None}
@@ -63,7 +69,7 @@ def get_history(user_id):
  
 def get_bilan(user_id):
     if user_id not in user_bilan:
-        user_bilan[user_id] = {"total": 0, "gagne": 0, "perdu": 0, "pending_id": None}
+        user_bilan[user_id] = {"total": 0, "gagne": 0, "perdu": 0}
     return user_bilan[user_id]
  
 def add_to_history(user_id, hand, decision):
@@ -110,6 +116,9 @@ def get_time_left(user_id):
     minutes = int((attente.seconds % 3600) / 60)
     return str(heures) + "h" + str(minutes) + "min"
  
+# ============================================================
+# CALCULS GTO
+# ============================================================
 def get_range_estimate(read, vpip=None, af=None, three_bet=None):
     read = read.lower()
     if vpip is not None:
@@ -155,12 +164,10 @@ def get_bluff_index(board, cards, read):
     read = read.lower()
     board = board.lower()
     cards = cards.lower()
- 
     if read in ["nit", "tag"]:
         score -= 3
     elif read in ["fish", "lag"]:
         score += 2
- 
     if "r" in board and "fd" not in board and "sd" not in board:
         score += 1
     if "fd" in board or "dd" in board:
@@ -169,16 +176,13 @@ def get_bluff_index(board, cards, read):
         score += 1
     if "k" in cards:
         score += 1
- 
     score = max(0, min(10, score))
- 
     if score <= 3:
-        label = "Faible - Evite le bluff"
+        label = "Faible — evite le bluff"
     elif score <= 6:
-        label = "Moyen - Bluff selectif"
+        label = "Moyen — bluff selectif"
     else:
-        label = "Eleve - Bonne opportunite"
- 
+        label = "Eleve — bonne opportunite"
     return score, label
  
 def get_randomizer(gto_text, decision_principale=None):
@@ -207,12 +211,9 @@ def parse_stats(read_str):
     read_clean = re.sub(r'vpip\d+|af\d+|3bet\d+', '', read_str).strip()
     return read_clean, vpip, af, three_bet
  
-def result_keyboard(hand_id):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Gagne", callback_data="win_" + str(hand_id)),
-         InlineKeyboardButton("Perdu", callback_data="lose_" + str(hand_id))]
-    ])
- 
+# ============================================================
+# CLAVIERS
+# ============================================================
 def pos_keyboard(prefix):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("UTG", callback_data=prefix+"UTG"),
@@ -254,20 +255,154 @@ def read_keyboard():
          InlineKeyboardButton("Inconnu", callback_data="r_inconnu")]
     ])
  
+def action_preflop_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Open", callback_data="act_open"),
+         InlineKeyboardButton("3-Bet", callback_data="act_3bet"),
+         InlineKeyboardButton("Call", callback_data="act_call"),
+         InlineKeyboardButton("Jam All-in", callback_data="act_jam")]
+    ])
+ 
+def action_postflop_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Check", callback_data="act_check"),
+         InlineKeyboardButton("C-Bet", callback_data="act_cbet"),
+         InlineKeyboardButton("Donk-Bet", callback_data="act_donk"),
+         InlineKeyboardButton("Raise", callback_data="act_raise")]
+    ])
+ 
+def result_keyboard(hand_id):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Gagne", callback_data="win_" + str(hand_id)),
+         InlineKeyboardButton("Perdu", callback_data="lose_" + str(hand_id))]
+    ])
+ 
+# ============================================================
+# FORMAT REPONSE ANALYSE
+# ============================================================
+def format_analysis(result, profil, strong, medium, bluff, bluff_idx, bluff_label, de, freq, action, action_finale, focus, user_id, text_left, image_left):
+    if focus:
+        decision_match = re.search(r'DECISION\s*:\s*(\w+)', result)
+        decision = decision_match.group(1) if decision_match else "?"
+        sizing_match = re.search(r'Sizing\s*:\s*(.+)', result)
+        sizing = sizing_match.group(1).strip() if sizing_match else "N/A"
+        return (
+            "*" + decision + "* | " + sizing + " | "
+            "Value " + str(strong) + "% Bluff " + str(bluff) + "% | "
+            "De " + str(de) + "/" + str(freq) + "% -> *" + action_finale + "*"
+        )
+ 
+    decision_match = re.search(r'DECISION\s*:\s*(.+)', result)
+    sizing_match = re.search(r'Sizing\s*:\s*(.+)', result)
+    odds_match = re.search(r'Pot odds\s*:\s*(.+)', result)
+    gto_match = re.search(r'GTO\s*:\s*(.+)', result)
+    exploit_match = re.search(r'Exploit\s*:\s*(.+)', result)
+    facteur_match = re.search(r'Facteur\s*(?:cle)?\s*:\s*(.+)', result, re.IGNORECASE)
+    attention_match = re.search(r'Attention\s*:\s*(.+)', result)
+ 
+    decision = decision_match.group(1).strip() if decision_match else "?"
+    sizing = sizing_match.group(1).strip() if sizing_match else "N/A"
+    odds = odds_match.group(1).strip() if odds_match else "N/A"
+    gto = gto_match.group(1).strip() if gto_match else "N/A"
+    exploit = exploit_match.group(1).strip() if exploit_match else "N/A"
+    facteur = facteur_match.group(1).strip() if facteur_match else "N/A"
+    attention = attention_match.group(1).strip() if attention_match else "N/A"
+ 
+    final = (
+        "🚨 *DECISION FINALE : " + decision + "*\n"
+        "📐 Sizing : " + sizing + "\n\n"
+ 
+        "📈 *Donnees GTO*\n"
+        "• " + odds + "\n"
+        "• Frequences : " + gto + "\n"
+        "• 🎲 De GTO : " + str(de) + "/100 — Frequence " + action + " " + str(freq) + "%\n"
+        "• Action finale : *" + action_finale + "*\n\n"
+ 
+        "🧠 *Analyse Exploitative*\n"
+        "• Profil : " + profil + "\n"
+        "• Value : " + str(strong) + "% | Neutre : " + str(medium) + "% | Bluff : " + str(bluff) + "%\n"
+        "• " + exploit + "\n"
+        "• 🔥 Indice de Bluff : " + str(bluff_idx) + "/10 — " + bluff_label + "\n\n"
+ 
+        "⚠️ *Vigilance*\n"
+        "• Facteur cle : " + facteur + "\n"
+        "• " + attention
+    )
+ 
+    if user_id != ADMIN_ID:
+        final += "\n\n_Analyses : " + str(text_left) + "/" + str(DAILY_LIMIT_TEXT) + " | Photos : " + str(image_left) + "/" + str(DAILY_LIMIT_IMAGE) + "_"
+ 
+    return final
+ 
+# ============================================================
+# COMMANDES
+# ============================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "*GTO Poker Bot*\n\n"
+        "♠️ *GTO Poker Bot*\n\n"
         "Ton coach strategique en temps reel.\n\n"
         "*COMMANDES*\n"
-        "/m analyser une main\n"
-        "/photo capture d ecran\n"
-        "/focus mode minimaliste ON/OFF\n"
-        "/bilan statistiques de session\n"
-        "/historique 5 dernieres mains\n"
-        "/format cash mtt spin\n"
-        "/reset remettre a zero\n"
-        "/aide lexique complet\n"
-        "/stat comprendre vpip af 3bet",
+        "/m — analyser une main\n"
+        "/photo — capture d ecran\n"
+        "/focus — mode minimaliste ON/OFF\n"
+        "/bilan — statistiques de session\n"
+        "/historique — 5 dernieres mains\n"
+        "/format — cash mtt spin\n"
+        "/guide — comment utiliser le bot\n"
+        "/reset — remettre a zero\n"
+        "/aide — lexique complet\n"
+        "/stat — comprendre vpip af 3bet",
+        parse_mode='Markdown'
+    )
+ 
+async def guide_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "💡 *GUIDE D UTILISATION*\n\n"
+ 
+        "*Comment analyser une main*\n"
+        "1. Tape /m\n"
+        "2. Clique ta position puis celle de l adversaire\n"
+        "3. Tape tes 2 cartes (ex: AKs, QQ, T9o)\n"
+        "4. Clique la street (Preflop Flop Turn River)\n"
+        "5. Clique l action adverse via les boutons\n"
+        "6. Clique ton stack et le profil adverse\n"
+        "7. Reçois ton analyse complete !\n\n"
+ 
+        "*Comment envoyer une capture d ecran*\n"
+        "1. Tape /photo\n"
+        "2. Prends une capture ou photo de ton ecran\n"
+        "3. Envoie l image dans le chat\n"
+        "4. Le bot lit automatiquement cartes board positions stacks\n"
+        "5. Analyse GTO instantanee !\n\n"
+ 
+        "*Comment interpreter le Randomizer GTO*\n"
+        "Le de GTO tire un nombre entre 1 et 100.\n"
+        "Si le bot dit 'raise 70%' et que le de fait 45 (inferieur a 70) => RAISE\n"
+        "Si le de fait 82 (superieur a 70) => action alternative (call ou check)\n"
+        "Cela permet de ne pas etre predictible et de respecter les frequences GTO.\n\n"
+ 
+        "*Abreviations positions*\n"
+        "UTG : 1er a parler (Under The Gun)\n"
+        "UTG+1 : 2eme a parler\n"
+        "MP : Middle Position\n"
+        "HJ : Hijack (2 avant bouton)\n"
+        "CO : Cutoff (1 avant bouton)\n"
+        "BTN : Bouton (meilleure position)\n"
+        "SB : Small Blind\n"
+        "BB : Big Blind\n\n"
+ 
+        "*Abreviations cartes et board*\n"
+        "AKs : As-Roi de meme couleur (suited)\n"
+        "AKo : As-Roi de couleurs differentes (offsuit)\n"
+        "K72r : board King-7-2 rainbow (3 couleurs differentes)\n"
+        "952dd : board avec 2 cartes de meme couleur\n"
+        "t8 : turn (4eme carte) = 8\n"
+        "r3 : river (5eme carte) = 3\n\n"
+ 
+        "*Mode Focus*\n"
+        "Tape /focus pour activer le mode ultra-rapide.\n"
+        "Format : DECISION | SIZING | RANGE | DE GTO\n"
+        "Tape /focus a nouveau pour desactiver.",
         parse_mode='Markdown'
     )
  
@@ -278,15 +413,15 @@ async def focus_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_data()
     if session["focus"]:
         await update.message.reply_text(
-            "*Mode Focus ON*\n"
-            "Reponses ultra-minimalistes activees.\n"
-            "Format : DECISION | SIZING | RANGE | DE GTO\n\n"
+            "⚡ *Mode Focus ON*\n"
+            "Format ultra-rapide active.\n"
+            "DECISION | SIZING | RANGE | DE GTO\n\n"
             "Tape /focus pour desactiver.",
             parse_mode='Markdown'
         )
     else:
         await update.message.reply_text(
-            "*Mode Focus OFF*\n"
+            "📊 *Mode Focus OFF*\n"
             "Analyse complete reactive.\n\n"
             "Tape /focus pour reactiver.",
             parse_mode='Markdown'
@@ -300,22 +435,21 @@ async def bilan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     perdu = bilan["perdu"]
     if total == 0:
         await update.message.reply_text(
-            "*Bilan de session*\n\nAucune main enregistree pour l instant.\nTape /m pour commencer !",
+            "*Bilan de session*\n\nAucune main enregistree.\nTape /m pour commencer !",
             parse_mode='Markdown'
         )
         return
     taux = round((gagne / total) * 100) if total > 0 else 0
     non_renseigne = total - gagne - perdu
+    perf = ("Excellente session !" if taux >= 60 else "Session correcte, reste concentre." if taux >= 40 else "Session difficile, analyse tes erreurs avec /historique.")
     await update.message.reply_text(
-        "*Bilan de Session*\n\n"
+        "📊 *Bilan de Session*\n\n"
         "Mains jouees : " + str(total) + "\n"
-        "Gagnees : " + str(gagne) + "\n"
-        "Perdues : " + str(perdu) + "\n"
-        "Non renseignees : " + str(non_renseigne) + "\n\n"
+        "✅ Gagnees : " + str(gagne) + "\n"
+        "❌ Perdues : " + str(perdu) + "\n"
+        "— Non renseignees : " + str(non_renseigne) + "\n\n"
         "*Taux de succes : " + str(taux) + "%*\n\n"
-        + ("Excellente session ! Continue comme ca." if taux >= 60
-           else "Session correcte, reste concentre." if taux >= 40
-           else "Session difficile, analyse tes erreurs avec /historique."),
+        + perf,
         parse_mode='Markdown'
     )
  
@@ -324,7 +458,7 @@ async def m_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_ok, text_left, image_ok, image_left = get_limits(user_id)
     if not text_ok:
         await update.message.reply_text(
-            "*Limite atteinte* : " + str(DAILY_LIMIT_TEXT) + "/" + str(DAILY_LIMIT_TEXT) + " analyses\n"
+            "🚫 *Limite atteinte* : " + str(DAILY_LIMIT_TEXT) + "/" + str(DAILY_LIMIT_TEXT) + "\n"
             "Renouvellement dans " + get_time_left(user_id) + "\n"
             "Il te reste " + str(image_left) + " analyses photo via /photo",
             parse_mode='Markdown'
@@ -334,7 +468,7 @@ async def m_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session["hand"] = {}
     session["step"] = "mypos"
     await update.message.reply_text(
-        "*Nouvelle main - Etape 1/6*\nTa position :",
+        "♠️ *Nouvelle main — Etape 1/6*\n\nTa position :",
         reply_markup=pos_keyboard("mypos_"),
         parse_mode='Markdown'
     )
@@ -344,7 +478,7 @@ async def photo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_ok, text_left, image_ok, image_left = get_limits(user_id)
     if not image_ok:
         await update.message.reply_text(
-            "*Limite photos atteinte* : " + str(DAILY_LIMIT_IMAGE) + "/" + str(DAILY_LIMIT_IMAGE) + "\n"
+            "🚫 *Limite photos atteinte* : " + str(DAILY_LIMIT_IMAGE) + "/" + str(DAILY_LIMIT_IMAGE) + "\n"
             "Renouvellement dans " + get_time_left(user_id) + "\n"
             "Il te reste " + str(text_left) + " analyses boutons via /m",
             parse_mode='Markdown'
@@ -353,12 +487,12 @@ async def photo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = get_session(user_id)
     session["step"] = "waiting_photo"
     await update.message.reply_text(
-        "*Envoie ta capture d ecran*\n\n"
+        "📸 *Envoie ta capture d ecran*\n\n"
         "Le bot va lire automatiquement :\n"
-        "- Tes cartes et le board\n"
-        "- Les positions et stacks\n"
-        "- L action en cours\n\n"
-        "Il te restera *" + str(image_left) + "* analyse(s) photo apres celle-ci.",
+        "• Tes cartes et le board\n"
+        "• Les positions et stacks\n"
+        "• L action en cours\n\n"
+        "_Il te restera " + str(image_left) + " analyse(s) photo apres celle-ci._",
         parse_mode='Markdown'
     )
  
@@ -367,7 +501,7 @@ async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = get_session(user_id)
     session["hand"] = {}
     session["step"] = None
-    await update.message.reply_text("Main remise a zero.\nTape /m ou /photo pour recommencer !")
+    await update.message.reply_text("🔄 Main remise a zero.\nTape /m ou /photo pour recommencer !")
  
 async def historique_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -375,9 +509,9 @@ async def historique_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not history:
         await update.message.reply_text("Aucune main analysee.\nTape /m pour commencer !")
         return
-    msg = "*Tes 5 dernieres mains*\n\n"
+    msg = "📋 *Tes 5 dernieres mains*\n\n"
     for i, entry in enumerate(reversed(history), 1):
-        msg += (str(i) + ". " + entry["time"] + " - " + entry["positions"] + "\n"
+        msg += (str(i) + ". " + entry["time"] + " — " + entry["positions"] + "\n"
                 "Cartes : " + entry["cartes"] + " | " + entry["street"] + "\n"
                 "Board : " + entry["board"] + "\n"
                 "Decision : *" + entry["decision"] + "*\n\n")
@@ -395,24 +529,24 @@ async def format_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if fmt == "cash":
         session["format"] = "cash"
         save_data()
-        await update.message.reply_text("*Mode CASH GAME active*\nTape /m pour analyser !", parse_mode='Markdown')
+        await update.message.reply_text("✅ *Mode CASH GAME active*\nTape /m pour analyser !", parse_mode='Markdown')
     elif fmt == "mtt":
         stack = args[1] if len(args) > 1 else "?"
         phase = args[2] if len(args) > 2 else "?"
         session["format"] = "mtt_" + stack + "_" + phase
         save_data()
-        await update.message.reply_text("*Mode MTT active*\nStack : " + stack + " | Phase : " + phase + "\nTape /m pour analyser !", parse_mode='Markdown')
+        await update.message.reply_text("✅ *Mode MTT active*\nStack : " + stack + " | Phase : " + phase + "\nTape /m pour analyser !", parse_mode='Markdown')
     elif fmt == "spin":
         session["format"] = "spin"
         save_data()
-        await update.message.reply_text("*Mode SPIN & GO active*\nTape /m pour analyser !", parse_mode='Markdown')
+        await update.message.reply_text("✅ *Mode SPIN & GO active*\nTape /m pour analyser !", parse_mode='Markdown')
     else:
         await update.message.reply_text("/format cash\n/format mtt [stack] [phase]\n/format spin")
  
 async def aide(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "*GUIDE COMPLET + LEXIQUE*\n\n"
-        "*POSITIONS*\n"
+        "📖 *LEXIQUE COMPLET*\n\n"
+        "*Positions*\n"
         "UTG : 1er a parler, position difficile\n"
         "MP : position intermediaire\n"
         "HJ : 2 places avant le bouton\n"
@@ -420,65 +554,64 @@ async def aide(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "BTN : meilleure position, parle en dernier\n"
         "SB : mise forcee, parle en 1er apres flop\n"
         "BB : mise forcee double\n\n"
-        "*CARTES*\n"
+        "*Cartes*\n"
         "s = suited = meme couleur (AKs)\n"
         "o = offsuit = couleurs diff (AKo)\n\n"
-        "*BOARD*\n"
-        "r = rainbow, fd = flushdraw, sd = straightdraw\n"
-        "dd = 2 couleurs, t = turn, r = river\n\n"
-        "*ACTIONS*\n"
+        "*Board*\n"
+        "r = rainbow | dd = 2 couleurs\n"
+        "fd = flushdraw | sd = straightdraw\n"
+        "t = turn | r = river\n\n"
+        "*Actions*\n"
         "Check : passer sans miser\n"
         "Call : suivre la mise\n"
         "Fold : abandonner\n"
-        "Raise/3bet/4bet : relances successives\n"
+        "Raise/3bet/4bet : relances\n"
         "Jam : tapis total\n"
-        "Cbet : mise continuation preflop\n"
-        "Donk : miser hors de position\n\n"
-        "*PROFILS*\n"
+        "Cbet : mise continuation\n"
+        "Donk : miser hors position\n\n"
+        "*Profils*\n"
         "Fish : joueur faible, joue trop\n"
-        "Reg : joueur regulier competent\n"
+        "Reg : regulier competent\n"
         "Nit : ultra serre, zero bluff\n"
         "TAG : serre mais agressif\n"
         "LAG : large et tres agressif\n\n"
-        "*TERMES GTO*\n"
-        "GTO : strategie mathematiquement parfaite\n"
+        "*Termes GTO*\n"
+        "GTO : strategie parfaite\n"
         "EV : gain moyen attendu\n"
         "ICM : pression tournoi\n"
         "SPR : rapport stack/pot\n"
-        "Equity : proba de gagner en %\n"
-        "Pot odds : rapport mise/pot\n"
-        "Range : toutes les mains possibles\n"
+        "Equity : proba de gagner\n"
         "Fold equity : chance de faire folder\n"
-        "Bloqueur : carte qui reduit la range adverse\n\n"
-        "*STATS AVANCEES*\n"
-        "Apres le read : vpip24 af3 3bet6\n"
-        "Calcul de range precise !\n\n"
-        "*LIMITES*\n"
-        "Analyses boutons : 25/24h\n"
-        "Analyses photo : 5/24h",
+        "Range : toutes mains possibles\n"
+        "Bloqueur : carte reduisant la range adverse\n\n"
+        "*Stats avancees (apres le read)*\n"
+        "vpip24 af3 3bet6 => range precise !",
         parse_mode='Markdown'
     )
  
 async def stat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "*COMPRENDRE LES STATS*\n\n"
+        "📊 *COMPRENDRE LES STATS*\n\n"
         "*VPIP*\n"
-        "moins de 15 = ultra nit\n"
+        "< 15 = ultra nit\n"
         "15-22 = nit\n"
         "22-30 = reg\n"
         "30-40 = lag\n"
-        "plus de 40 = fish\n\n"
+        "> 40 = fish\n\n"
         "*AF (Agressivite)*\n"
-        "moins de 2 = passif\n"
+        "< 2 = passif\n"
         "2-3 = equilibre\n"
-        "plus de 3 = tres agressif\n\n"
+        "> 3 = tres agressif\n\n"
         "*3BET*\n"
-        "moins de 4 = tight\n"
+        "< 4 = tight\n"
         "4-8 = standard\n"
-        "plus de 8 = tres agressif",
+        "> 8 = tres agressif",
         parse_mode='Markdown'
     )
  
+# ============================================================
+# HANDLER BOUTONS
+# ============================================================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -486,87 +619,122 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = get_session(user_id)
     data = query.data
  
+    # Resultat gagné/perdu
     if data.startswith("win_"):
         bilan = get_bilan(user_id)
         bilan["gagne"] += 1
         await query.edit_message_reply_markup(reply_markup=None)
-        await context.bot.send_message(chat_id=query.message.chat_id, text="Gagne enregistre ! /bilan pour tes stats.")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="✅ Gagne enregistre ! Tape /bilan pour tes stats.")
         return
  
     if data.startswith("lose_"):
         bilan = get_bilan(user_id)
         bilan["perdu"] += 1
         await query.edit_message_reply_markup(reply_markup=None)
-        await context.bot.send_message(chat_id=query.message.chat_id, text="Perdu enregistre. Analyse tes erreurs avec /historique.")
+        await context.bot.send_message(chat_id=query.message.chat_id, text="❌ Perdu enregistre. Analyse tes erreurs avec /historique.")
         return
  
+    # Position hero
     if data.startswith("mypos_"):
         pos = data.replace("mypos_", "")
         session["hand"]["mypos"] = pos
         session["step"] = "villainpos"
         await query.edit_message_text(
-            "Ta position : *" + pos + "*\n\nEtape 2/6\nPosition adverse :",
+            "Ta position : *" + pos + "*\n\n♠️ *Etape 2/6*\nPosition adverse :",
             reply_markup=pos_keyboard("vpos_"),
             parse_mode='Markdown'
         )
+ 
+    # Position villain
     elif data.startswith("vpos_"):
         pos = data.replace("vpos_", "")
         session["hand"]["villainpos"] = pos
         session["step"] = "cards"
         await query.edit_message_text(
-            "Ta position : " + session["hand"]["mypos"] + "\n"
-            "Position adverse : *" + pos + "*\n\n"
-            "Etape 3/6\nTape tes 2 cartes :\n"
-            "ex: AKs - QQ - T9o",
+            "Ta position : " + session["hand"]["mypos"] + " | Adverse : *" + pos + "*\n\n"
+            "♠️ *Etape 3/6*\nTape tes 2 cartes :\n"
+            "_ex: AKs — QQ — T9o — A7s_",
             parse_mode='Markdown'
         )
+ 
+    # Street
     elif data.startswith("s_"):
         street = data.replace("s_", "")
         session["hand"]["street"] = street
         if street == "preflop":
-            session["step"] = "action"
+            session["step"] = "action_preflop"
             await query.edit_message_text(
-                "Street : *Preflop*\n\nEtape 5/6\nTape l action adverse :\n"
-                "ex: open - 3bet9/3 - jam - check",
+                "Street : *Preflop*\n\n♠️ *Etape 5/6*\nAction adverse :",
+                reply_markup=action_preflop_keyboard(),
                 parse_mode='Markdown'
             )
         else:
             session["step"] = "board"
             await query.edit_message_text(
-                "Street : *" + street + "*\n\nEtape 5/6\nTape le board :\n"
-                "ex: K72r - 952dd - K72r t8",
+                "Street : *" + street + "*\n\n♠️ *Etape 5/6*\nTape le board :\n"
+                "_ex: K72r — 952dd — K72r t8_",
                 parse_mode='Markdown'
             )
+ 
+    # Actions preflop boutons
+    elif data.startswith("act_"):
+        action = data.replace("act_", "")
+        labels = {
+            "open": "Open raise",
+            "3bet": "3-Bet",
+            "call": "Call",
+            "jam": "Jam All-in",
+            "check": "Check",
+            "cbet": "C-Bet continuation",
+            "donk": "Donk-Bet",
+            "raise": "Raise"
+        }
+        action_label = labels.get(action, action)
+        session["hand"]["action"] = action_label
+        session["step"] = "stack"
+        await query.edit_message_text(
+            "Action : *" + action_label + "*\n\n♠️ *Etape 6/6*\nStacks effectifs :",
+            reply_markup=stack_keyboard(),
+            parse_mode='Markdown'
+        )
+ 
+    # Stack
     elif data.startswith("bb_"):
         stack = data.replace("bb_", "") + "bb"
         session["hand"]["stack"] = stack
         session["step"] = "read"
         await query.edit_message_text(
-            "Stack : *" + stack + "*\n\nEtape 6/6\nRead adversaire :",
+            "Stack : *" + stack + "*\n\n♠️ *Etape 6/6*\nRead adversaire :\n"
+            "_Tu peux aussi taper des stats apres ex: vpip28 af2 3bet5_",
             reply_markup=read_keyboard(),
             parse_mode='Markdown'
         )
+ 
+    # Read
     elif data.startswith("r_"):
         read = data.replace("r_", "")
         session["hand"]["read"] = read
         session["hand"]["stats_str"] = ""
         session["step"] = "done"
-        await query.edit_message_text("Analyse en cours...")
+        await query.edit_message_text("🔍 *Analyse en cours...*", parse_mode='Markdown')
         await run_analysis(query, user_id, session)
  
+# ============================================================
+# HANDLER PHOTOS
+# ============================================================
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     session = get_session(user_id)
     text_ok, text_left, image_ok, image_left = get_limits(user_id)
  
     if not image_ok:
-        await update.message.reply_text("Limite photos atteinte. Renouvellement dans " + get_time_left(user_id))
+        await update.message.reply_text("🚫 Limite photos atteinte. Renouvellement dans " + get_time_left(user_id))
         return
     if session.get("step") != "waiting_photo":
         await update.message.reply_text("Tape d abord /photo pour activer l analyse par image !")
         return
  
-    await update.message.reply_text("Image recue, analyse en cours...")
+    await update.message.reply_text("📸 Image recue, analyse en cours...")
  
     try:
         photo = update.message.photo[-1]
@@ -614,10 +782,14 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = response.content[0].text
         decision_match = re.search(r'DECISION\s*:\s*(\w+)', result)
         decision = decision_match.group(1) if decision_match else "?"
+ 
         hand_info = {"cards": "photo", "board": "photo", "street": "photo", "mypos": "?", "villainpos": "?"}
         add_to_history(user_id, hand_info, decision)
  
+        profil, strong, medium, bluff = get_range_estimate("inconnu")
+        bluff_idx, bluff_label = get_bluff_index("?", "?", "inconnu")
         de, freq, action, action_finale = get_randomizer(result, decision)
+ 
         increment_image(user_id)
         text_ok2, text_left2, image_ok2, image_left2 = get_limits(user_id)
  
@@ -626,39 +798,17 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hand_id = bilan["total"]
  
         focus = session.get("focus", False)
-        if focus:
-            profil, strong, medium, bluff = get_range_estimate("inconnu")
-            final = (
-                "*" + decision + "* | " + "voir analyse" + " | "
-                "Value " + str(strong) + "% Bluff " + str(bluff) + "% | "
-                "De " + str(de) + "/" + str(freq) + "% -> *" + action_finale + "*"
-            )
-        else:
-            bluff_idx, bluff_label = get_bluff_index("?", "?", "inconnu")
-            final = (
-                result + "\n\n"
-                "---\n"
-                "*Range adversaire*\n"
-                "Estimation basee sur l image\n\n"
-                "---\n"
-                "*Indice de Bluff : " + str(bluff_idx) + "/10*\n"
-                + bluff_label + "\n\n"
-                "---\n"
-                "*Randomizer GTO*\n"
-                "De : " + str(de) + "/100\n"
-                "Frequence : " + action + " " + str(freq) + "%\n"
-                "*Action finale : " + action_finale + "*"
-            )
-            if user_id != ADMIN_ID:
-                final += "\n\nAnalyses boutons : " + str(text_left2) + "/" + str(DAILY_LIMIT_TEXT)
-                final += "\nAnalyses photo : " + str(image_left2) + "/" + str(DAILY_LIMIT_IMAGE)
+        final = format_analysis(result, profil, strong, medium, bluff, bluff_idx, bluff_label, de, freq, action, action_finale, focus, user_id, text_left2, image_left2)
  
         await update.message.reply_text(final, reply_markup=result_keyboard(hand_id), parse_mode='Markdown')
         session["step"] = None
  
     except Exception as e:
-        await update.message.reply_text("Erreur lecture image. Verifie la nettete et reessaie.\nOu utilise /m pour l analyse manuelle.")
+        await update.message.reply_text("❌ Erreur lecture image. Verifie la nettete et reessaie.\nOu utilise /m pour l analyse manuelle.")
  
+# ============================================================
+# HANDLER TEXTE
+# ============================================================
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     session = get_session(user_id)
@@ -666,41 +816,41 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     step = session.get("step")
  
     if step == "waiting_photo":
-        await update.message.reply_text("Envoie une photo ! Ou /reset pour annuler.")
+        await update.message.reply_text("📸 Envoie une photo ! Ou /reset pour annuler.")
+ 
     elif step == "cards":
         session["hand"]["cards"] = text
         session["step"] = "street"
+        street = session["hand"].get("street", None)
         await update.message.reply_text(
-            "Cartes : *" + text + "*\n\nEtape 4/6\nStreet :",
+            "Cartes : *" + text + "*\n\n♠️ *Etape 4/6*\nStreet :",
             reply_markup=street_keyboard(),
             parse_mode='Markdown'
         )
+ 
     elif step == "board":
         session["hand"]["board"] = text
-        session["step"] = "action"
+        session["step"] = "action_postflop"
         await update.message.reply_text(
-            "Board : *" + text + "*\n\nEtape 5/6\nTape l action adverse :\n"
-            "ex: cbet5/10 - check - donk6/15",
+            "Board : *" + text + "*\n\n♠️ *Etape 5/6*\nAction adverse :",
+            reply_markup=action_postflop_keyboard(),
             parse_mode='Markdown'
         )
-    elif step == "action":
-        session["hand"]["action"] = text
-        session["step"] = "stack"
-        await update.message.reply_text(
-            "Action : *" + text + "*\n\nEtape 6/6\nStacks effectifs :",
-            reply_markup=stack_keyboard(),
-            parse_mode='Markdown'
-        )
+ 
     else:
         await update.message.reply_text(
             "/m analyser une main\n"
             "/photo capture d ecran\n"
+            "/guide comment utiliser le bot\n"
             "/bilan tes statistiques\n"
             "/historique dernieres mains\n"
             "/focus mode minimaliste\n"
             "/reset remettre a zero"
         )
  
+# ============================================================
+# ANALYSE PRINCIPALE
+# ============================================================
 async def run_analysis(query, user_id, session):
     hand = session["hand"]
     fmt = session.get("format") or "cash"
@@ -771,40 +921,18 @@ async def run_analysis(query, user_id, session):
         bilan["total"] += 1
         hand_id = bilan["total"]
  
-        if focus:
-            final = (
-                "*" + decision + "* | Sizing : voir analyse | "
-                "Value " + str(strong) + "% Bluff " + str(bluff) + "% | "
-                "De " + str(de) + "/" + str(freq) + "% -> *" + action_finale + "*"
-            )
-        else:
-            final = (
-                result + "\n\n"
-                "---\n"
-                "*Range adversaire (" + profil + ")*\n"
-                "Mains fortes (value) : " + str(strong) + "%\n"
-                "Mains moyennes : " + str(medium) + "%\n"
-                "Bluffs : " + str(bluff) + "%\n\n"
-                "---\n"
-                "*Indice de Bluff : " + str(bluff_idx) + "/10*\n"
-                + bluff_label + "\n\n"
-                "---\n"
-                "*Randomizer GTO*\n"
-                "De : " + str(de) + "/100\n"
-                "Frequence : " + action + " " + str(freq) + "%\n"
-                "*Action finale : " + action_finale + "*"
-            )
-            if user_id != ADMIN_ID:
-                final += "\n\nAnalyses restantes : " + str(text_left) + "/" + str(DAILY_LIMIT_TEXT)
-                final += " | Photos : " + str(image_left) + "/" + str(DAILY_LIMIT_IMAGE)
+        final = format_analysis(result, profil, strong, medium, bluff, bluff_idx, bluff_label, de, freq, action, action_finale, focus, user_id, text_left, image_left)
  
         await query.edit_message_text(final, reply_markup=result_keyboard(hand_id), parse_mode='Markdown')
         session["step"] = None
         session["hand"] = {}
  
     except Exception as e:
-        await query.edit_message_text("Erreur d analyse. Tape /m pour reessayer.")
+        await query.edit_message_text("❌ Erreur d analyse. Tape /m pour reessayer.")
  
+# ============================================================
+# MAIN
+# ============================================================
 def main():
     load_data()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -816,6 +944,7 @@ def main():
     app.add_handler(CommandHandler("reset", reset_cmd))
     app.add_handler(CommandHandler("historique", historique_cmd))
     app.add_handler(CommandHandler("format", format_cmd))
+    app.add_handler(CommandHandler("guide", guide_cmd))
     app.add_handler(CommandHandler("aide", aide))
     app.add_handler(CommandHandler("stat", stat))
     app.add_handler(CallbackQueryHandler(button_handler))
